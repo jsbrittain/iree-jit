@@ -37,5 +37,9 @@ int main(int argc, const char **argv) {
   
   // Run IREE compiler
   IREECompiler iree_compiler("local-sync");  // local-sync | metal
-  return iree_compiler.main(iree_argc, argv, mlir_files);
+  iree_compiler.init(iree_argc, argv);
+  iree_compiler.addSessions(mlir_files);
+  iree_compiler.testSessions();
+  iree_compiler.cleanup();
+  return 0;
 };

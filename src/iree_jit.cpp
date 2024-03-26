@@ -25,18 +25,45 @@ void IREESession::cleanup_compiler_state(compiler_state_t s) {
     ireeCompilerSourceDestroy(s.source);
   if (s.session)
     ireeCompilerSessionDestroy(s.session);
-  ireeCompilerGlobalShutdown();
 }
 
 IREECompiler::IREECompiler() {
   device_uri = "local-sync";
 };
 
-int IREECompiler::main(int argc, const char **argv, const std::vector<std::string>& mlir_fcns) {
-  if (initIREE(argc, argv) != 0)  // Initialisation and version checking
-    return 1;
-  IREESession iree_compiler(device_uri);
-  return iree_compiler.main(argc, argv, mlir_fcns);
+IREECompiler::~IREECompiler() {
+  ireeCompilerGlobalShutdown();
+};
+
+int IREECompiler::init(int argc, const char **argv) {
+  return initIREE(argc, argv);  // Initialisation and version checking
+};
+
+IREESession IREECompiler::addSession(const std::string& mlir_fcn) {
+  IREESession iree_session(device_uri, mlir_fcn);
+  iree_sessions.push_back(iree_session);
+  return iree_session;
+};
+
+std::vector<IREESession> IREECompiler::addSessions(const std::vector<std::string>& mlir_fcns) {
+  for (const std::string& mlir_fcn : mlir_fcns) {
+    addSession(mlir_fcn);
+  }
+  return iree_sessions;
+};
+
+void IREECompiler::testSessions() {
+  iree_sessions[0].buildAndIssueCall("module.simple_mul");
+  iree_sessions[1].buildAndIssueCall("module.simple_mul_2");
+};
+
+int IREECompiler::cleanup() {
+  for (IREESession iree_session : iree_sessions) {
+    std::cout << "Cleaning up session" << std::endl;
+    if (iree_session.cleanup() != 0)
+      return 1;
+  }
+  return 0;
 };
 
 IREESession::IREESession() {
@@ -46,23 +73,13 @@ IREESession::IREESession() {
   s.inv = NULL;
 };
 
-int IREESession::main(int argc, const char **argv, const std::vector<std::string>& mlir_fcns) {
-  for (auto mlir_fcn : mlir_fcns) {
-    this->mlir_fcns.push_back(mlir_fcn);
-  }
-  mlir_code = this->mlir_fcns[0];
-  if (init(argc, argv) != 0)
-    return 1;
-  if (buildAndIssueCall("module.simple_mul") != 0)
-    return 1;
-  if (buildAndIssueCall("module.simple_mul_2") != 0)
-    return 1;
-  if (cleanup() != 0)
-    return 1;
-  return 0;
-};
+IREESession::IREESession(const char *device_uri, const std::string& mlir_code) : IREESession() {
+  this->device_uri=device_uri;
+  this->mlir_code=mlir_code;
+  init();
+}
 
-int IREESession::init(int argc, const char **argv) {
+int IREESession::init() {
   if (initCompiler() != 0)  // Prepare compiler inputs and outputs
     return 1;
   if (initCompileToByteCode() != 0)  // Compile to bytecode
@@ -138,12 +155,11 @@ int IREESession::initCompiler() {
   //error = ireeCompilerSourceOpenFile(s.session, mlir_filename, &s.source);
   
   // Read the MLIR from memory
-  const std::string& mlir = this->mlir_fcns[0];
   error = ireeCompilerSourceWrapBuffer(
     s.session,
     "expr_buffer",  // name of the buffer (does not need to match MLIR)
-    mlir.c_str(),
-    mlir.length() + 1,
+    mlir_code.c_str(),
+    mlir_code.length() + 1,
     true,
     &s.source
   );

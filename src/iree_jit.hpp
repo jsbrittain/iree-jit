@@ -10,15 +10,23 @@
 #define IREE_COMPILER_EXPECTED_API_MAJOR 1 // At most this major version
 #define IREE_COMPILER_EXPECTED_API_MINOR 2 // At least this minor version
 
+class IREESession;
+
 class IREECompiler {
 private:
   const char *device_uri = NULL;
+  std::vector<IREESession> iree_sessions;
 private:
   int initIREE(int argc, const char **argv);
 public:
   IREECompiler();
+  ~IREECompiler();
   explicit IREECompiler(const char *device_uri) : IREECompiler() { this->device_uri=device_uri; }
-  int main(int argc, const char **argv, const std::vector<std::string>& mlir_fcns);
+  int init(int argc, const char **argv);
+  IREESession addSession(const std::string& mlir_fcn);
+  std::vector<IREESession> addSessions(const std::vector<std::string>& mlir_fcns);
+  int cleanup();
+  void testSessions();
 };
 
 typedef struct compiler_state_t {
@@ -41,24 +49,22 @@ private:
   iree_status_t status;
   iree_hal_device_t* device = NULL;
   iree_runtime_instance_t* instance = NULL;
-  std::vector<std::string> mlir_fcns;
   std::string mlir_code;
 
 // Methods
 private:
   void handle_compiler_error(iree_compiler_error_t *error);
   void cleanup_compiler_state(compiler_state_t s);
-  int init(int argc, const char **argv);
+  int init();
   int initCompiler();
   int initCompileToByteCode();
   int initRuntime();
-  int buildAndIssueCall(const char* function_name);
-  int cleanup();
   // IREE runtime functions
   static iree_status_t iree_runtime_demo_perform_mul(iree_runtime_session_t* session, const char* function_name);
   static iree_status_t iree_runtime_demo_pybamm(iree_runtime_session_t* session, const char* function_name);
 public:
-  IREESession ();
-  explicit IREESession(const char *device_uri) : IREESession() { this->device_uri=device_uri; }
-  int main(int argc, const char **argv, const std::vector<std::string>& mlir_fcns);
+  IREESession();
+  explicit IREESession(const char *device_uri, const std::string& mlir_code);
+  int buildAndIssueCall(const char* function_name);
+  int cleanup();
 };
