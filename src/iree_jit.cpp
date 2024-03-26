@@ -53,8 +53,9 @@ std::vector<IREESession> IREECompiler::addSessions(const std::vector<std::string
 };
 
 void IREECompiler::testSessions() {
-  iree_sessions[0].buildAndIssueCall("module.simple_mul");
-  iree_sessions[1].buildAndIssueCall("module.simple_mul_2");
+  for(IREESession iree_session : iree_sessions) {
+    iree_session.buildAndIssueCall("jit_evaluate_jax.main");
+  }
 };
 
 int IREECompiler::cleanup() {
@@ -305,8 +306,12 @@ int IREESession::buildAndIssueCall(const char* function_name) {
   // keep state within the compiled module instead of externalizing and passing
   // it as arguments/results as IREE cannot optimize external state.
   status = iree_runtime_demo_pybamm(session, function_name);
-  if (!iree_status_is_ok(status))
+  if (!iree_status_is_ok(status)) {
+    std::cout << "Error: iree_runtime_demo_pybamm failed" << std::endl;
+    iree_status_fprint(stderr, status);
+    //iree_status_ignore(status);
     return 1;
+  }
 
   return 0;
 };
@@ -439,7 +444,6 @@ iree_status_t IREESession::iree_runtime_demo_perform_mul(iree_runtime_session_t*
 }
 
 iree_status_t IREESession::iree_runtime_demo_pybamm(iree_runtime_session_t* session, const char* function_name) {
-
   // Initialize the call to the function.
   iree_runtime_call_t call;
   IREE_RETURN_IF_ERROR(iree_runtime_call_initialize_by_name(
@@ -458,8 +462,12 @@ iree_status_t IREESession::iree_runtime_demo_pybamm(iree_runtime_session_t* sess
     // %lhs: tensor<4xf32>
     iree_hal_buffer_view_t* lhs = NULL;
     if (iree_status_is_ok(status)) {
-      static const iree_hal_dim_t lhs_shape[1] = {4};
-      static const float lhs_data[4] = {1.0f, 1.1f, 1.2f, 1.3f};
+      static const iree_hal_dim_t lhs_shape[2] = {560, 1};
+      static float lhs_data[560];
+      for(int i = 0; i < lhs_shape[0]; i++) {
+        lhs_data[i] = (float)(i/100.0f);
+      }
+      //static const float lhs_data[4] = {1.0f, 1.1f, 1.2f, 1.3f};
       status = iree_hal_buffer_view_allocate_buffer_copy(
           device, device_allocator,
           // Shape rank and dimensions:
@@ -480,6 +488,8 @@ iree_status_t IREESession::iree_runtime_demo_pybamm(iree_runtime_session_t* sess
           iree_make_const_byte_span(lhs_data, sizeof(lhs_data)),
           // Buffer view + storage are returned and owned by the caller:
           &lhs);
+    } else {
+      std::cout << "hal status: " << status << "\n";
     }
     if (iree_status_is_ok(status)) {
       IREE_IGNORE_ERROR(iree_hal_buffer_view_fprint(
@@ -489,39 +499,14 @@ iree_status_t IREESession::iree_runtime_demo_pybamm(iree_runtime_session_t* sess
     }
     // Since the call retains the buffer view we can release it here.
     iree_hal_buffer_view_release(lhs);
-
-    fprintf(stdout, "\n * \n");
-
-    // %rhs: tensor<4xf32>
-    iree_hal_buffer_view_t* rhs = NULL;
-    if (iree_status_is_ok(status)) {
-      static const iree_hal_dim_t rhs_shape[1] = {4};
-      static const float rhs_data[4] = {10.0f, 100.0f, 1000.0f, 10000.0f};
-      status = iree_hal_buffer_view_allocate_buffer_copy(
-          device, device_allocator, IREE_ARRAYSIZE(rhs_shape), rhs_shape,
-          IREE_HAL_ELEMENT_TYPE_FLOAT_32,
-          IREE_HAL_ENCODING_TYPE_DENSE_ROW_MAJOR,
-          (iree_hal_buffer_params_t){
-              .type = IREE_HAL_MEMORY_TYPE_DEVICE_LOCAL,
-              .access = IREE_HAL_MEMORY_ACCESS_ALL,
-              .usage = IREE_HAL_BUFFER_USAGE_DEFAULT,
-          },
-          iree_make_const_byte_span(rhs_data, sizeof(rhs_data)), &rhs);
-    }
-    if (iree_status_is_ok(status)) {
-      IREE_IGNORE_ERROR(iree_hal_buffer_view_fprint(
-          stdout, rhs, /*max_element_count=*/4096, host_allocator));
-      status = iree_runtime_call_inputs_push_back_buffer_view(&call, rhs);
-    }
-    iree_hal_buffer_view_release(rhs);
+  } else {
+    std::cout << "allocator status: " << status << "\n";
   }
 
   // Synchronously perform the call.
   if (iree_status_is_ok(status)) {
     status = iree_runtime_call_invoke(&call, /*flags=*/0);
   }
-
-  fprintf(stdout, "\n = \n");
 
   // Dump the function outputs.
   iree_hal_buffer_view_t* result = NULL;
