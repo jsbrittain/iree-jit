@@ -10,9 +10,16 @@
 #define IREE_COMPILER_EXPECTED_API_MAJOR 1 // At most this major version
 #define IREE_COMPILER_EXPECTED_API_MINOR 2 // At least this minor version
 
-///////////
-/// THINGS TO FIX
-/// - IREE_COMPILER_PATH
+class IREECompiler {
+private:
+  const char *device_uri = NULL;
+private:
+  int initIREE(int argc, const char **argv);
+public:
+  IREECompiler();
+  explicit IREECompiler(const char *device_uri) : IREECompiler() { this->device_uri=device_uri; }
+  int main(int argc, const char **argv, const std::vector<std::string>& mlir_fcns);
+};
 
 typedef struct compiler_state_t {
   iree_compiler_session_t *session;
@@ -21,7 +28,7 @@ typedef struct compiler_state_t {
   iree_compiler_invocation_t *inv;
 } compiler_state_t;
 
-class IREECompiler {
+class IREESession {
 // Properties
 private:
   const char *device_uri = NULL;
@@ -42,7 +49,6 @@ private:
   void handle_compiler_error(iree_compiler_error_t *error);
   void cleanup_compiler_state(compiler_state_t s);
   int init(int argc, const char **argv);
-  int initIREE(int argc, const char **argv);
   int initCompiler();
   int initCompileToByteCode();
   int initRuntime();
@@ -52,7 +58,7 @@ private:
   static iree_status_t iree_runtime_demo_perform_mul(iree_runtime_session_t* session, const char* function_name);
   static iree_status_t iree_runtime_demo_pybamm(iree_runtime_session_t* session, const char* function_name);
 public:
-  IREECompiler();
-  explicit IREECompiler(const char *device_uri) : IREECompiler() { this->device_uri=device_uri; }
+  IREESession ();
+  explicit IREESession(const char *device_uri) : IREESession() { this->device_uri=device_uri; }
   int main(int argc, const char **argv, const std::vector<std::string>& mlir_fcns);
 };

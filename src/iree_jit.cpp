@@ -10,13 +10,13 @@
 #include <iree/compiler/loader.h>
 #include <iree/runtime/api.h>
 
-void IREECompiler::handle_compiler_error(iree_compiler_error_t *error) {
+void IREESession::handle_compiler_error(iree_compiler_error_t *error) {
   const char *msg = ireeCompilerErrorGetMessage(error);
   fprintf(stderr, "Error from compiler API:\n%s\n", msg);
   ireeCompilerErrorDestroy(error);
 }
 
-void IREECompiler::cleanup_compiler_state(compiler_state_t s) {
+void IREESession::cleanup_compiler_state(compiler_state_t s) {
   if (s.inv)
     ireeCompilerInvocationDestroy(s.inv);
   if (s.output)
@@ -29,13 +29,24 @@ void IREECompiler::cleanup_compiler_state(compiler_state_t s) {
 }
 
 IREECompiler::IREECompiler() {
+  device_uri = "local-sync";
+};
+
+int IREECompiler::main(int argc, const char **argv, const std::vector<std::string>& mlir_fcns) {
+  if (initIREE(argc, argv) != 0)  // Initialisation and version checking
+    return 1;
+  IREESession iree_compiler(device_uri);
+  return iree_compiler.main(argc, argv, mlir_fcns);
+};
+
+IREESession::IREESession() {
   s.session = NULL;
   s.source = NULL;
   s.output = NULL;
   s.inv = NULL;
 };
 
-int IREECompiler::main(int argc, const char **argv, const std::vector<std::string>& mlir_fcns) {
+int IREESession::main(int argc, const char **argv, const std::vector<std::string>& mlir_fcns) {
   for (auto mlir_fcn : mlir_fcns) {
     this->mlir_fcns.push_back(mlir_fcn);
   }
@@ -51,9 +62,7 @@ int IREECompiler::main(int argc, const char **argv, const std::vector<std::strin
   return 0;
 };
 
-int IREECompiler::init(int argc, const char **argv) {
-  if (initIREE(argc, argv) != 0)  // Initialisation and version checking
-    return 1;
+int IREESession::init(int argc, const char **argv) {
   if (initCompiler() != 0)  // Prepare compiler inputs and outputs
     return 1;
   if (initCompileToByteCode() != 0)  // Compile to bytecode
@@ -120,7 +129,7 @@ int IREECompiler::initIREE(int argc, const char **argv) {
   return 0;
 };
 
-int IREECompiler::initCompiler() {
+int IREESession::initCompiler() {
 
   // A session provides a scope where one or more invocations can be executed
   s.session = ireeCompilerSessionCreate();
@@ -149,7 +158,7 @@ int IREECompiler::initCompiler() {
   return 0;
 };
 
-int IREECompiler::initCompileToByteCode() {
+int IREESession::initCompileToByteCode() {
   // ------------------------------------------------------------------------
   // Compile to bytecode
   // ------------------------------------------------------------------------
@@ -198,7 +207,7 @@ int IREECompiler::initCompileToByteCode() {
   return 0;
 };
 
-int IREECompiler::initRuntime() {
+int IREESession::initRuntime() {
   // ------------------------------------------------------------------------ //
   // RUNTIME PART
   // ------------------------------------------------------------------------ //
@@ -274,7 +283,7 @@ int IREECompiler::initRuntime() {
   return 0;
 };
 
-int IREECompiler::buildAndIssueCall(const char* function_name) {
+int IREESession::buildAndIssueCall(const char* function_name) {
   // Build and issue the call - here just one we do for this sample but in a
   // real application the session should be reused as much as possible. Always
   // keep state within the compiled module instead of externalizing and passing
@@ -287,7 +296,7 @@ int IREECompiler::buildAndIssueCall(const char* function_name) {
 };
 
 // Release the session and free all cached resources.
-int IREECompiler::cleanup() {
+int IREESession::cleanup() {
   iree_runtime_session_release(session);
   iree_hal_device_release(device);
   iree_runtime_instance_release(instance);
@@ -310,7 +319,7 @@ int IREECompiler::cleanup() {
 // application as needed. For example, an application could perform
 // multi-threaded buffer view creation and then issue the call from a single
 // thread when all inputs are ready.
-iree_status_t IREECompiler::iree_runtime_demo_perform_mul(iree_runtime_session_t* session, const char* function_name) {
+iree_status_t IREESession::iree_runtime_demo_perform_mul(iree_runtime_session_t* session, const char* function_name) {
 
   // Initialize the call to the function.
   iree_runtime_call_t call;
@@ -413,7 +422,7 @@ iree_status_t IREECompiler::iree_runtime_demo_perform_mul(iree_runtime_session_t
   return status;
 }
 
-iree_status_t IREECompiler::iree_runtime_demo_pybamm(iree_runtime_session_t* session, const char* function_name) {
+iree_status_t IREESession::iree_runtime_demo_pybamm(iree_runtime_session_t* session, const char* function_name) {
 
   // Initialize the call to the function.
   iree_runtime_call_t call;
