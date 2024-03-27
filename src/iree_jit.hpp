@@ -50,6 +50,8 @@ private:
   iree_hal_device_t* device = NULL;
   iree_runtime_instance_t* instance = NULL;
   std::string mlir_code;
+  iree_runtime_call_t call;
+  iree_allocator_t host_allocator;
 
 // Methods
 private:
@@ -60,8 +62,12 @@ private:
   int initCompileToByteCode();
   int initRuntime();
   // IREE runtime functions
-  static iree_status_t iree_runtime_demo_perform_mul(iree_runtime_session_t* session, const char* function_name);
-  static iree_status_t iree_runtime_demo_pybamm(iree_runtime_session_t* session, const char* function_name);
+  iree_status_t iree_runtime_exec(
+    iree_runtime_session_t* session,
+    const char* function_name,
+    const std::vector<std::vector<int>>& inputs,
+    const std::vector<float*>& data
+  );
 public:
   IREESession();
   explicit IREESession(const char *device_uri, const std::string& mlir_code);

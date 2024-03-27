@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <iostream>
+#include <tuple>
 #include <vector>
 
 #include <iree/compiler/embedding_api.h>
@@ -91,10 +92,7 @@ int IREESession::init() {
 };
 
 int IREECompiler::initIREE(int argc, const char **argv) {
-  // ------------------------------------------------------------------------
-  // Initialization and version checking
-  // ------------------------------------------------------------------------
-  
+
   if (device_uri == NULL) {
     fprintf(stdout, "No device URI provided, using local-sync\n");
     device_uri = "local-sync";
@@ -106,15 +104,13 @@ int IREECompiler::initIREE(int argc, const char **argv) {
   strcpy(iree_compiler_lib, COMPILER_PATH);
   strcat(iree_compiler_lib, "/libIREECompiler.dylib");
 
-  // Load the compiler library then initialize it.
-  // This should be done only once per process. If deferring the load or using
-  // multiple threads, be sure to synchronize this, e.g. with std::call_once.
+  // Load the compiler library then initialize it
   bool result = ireeCompilerLoadLibrary(iree_compiler_lib);
   if (!result) {
     fprintf(stderr, "** Failed to initialize IREE Compiler **\n");
     return 1;
   }
-  // Note: this must be balanced with a call to ireeCompilerGlobalShutdown().
+  // must be balanced with a call to ireeCompilerGlobalShutdown()
   ireeCompilerGlobalInitialize();
 
   // To set global options (see `iree-compile --help` for possibilities), use
@@ -124,7 +120,7 @@ int IREECompiler::initIREE(int argc, const char **argv) {
   ireeCompilerGetProcessCLArgs(&cl_argc, &argv);
   ireeCompilerSetupGlobalCL(cl_argc, argv, "iree-jit", false);
 
-  // Check the API version before proceeding any further.
+  // Check the API version before proceeding any further
   uint32_t api_version = (uint32_t)ireeCompilerGetAPIVersion();
   uint16_t api_version_major = (uint16_t)((api_version >> 16) & 0xFFFFUL);
   uint16_t api_version_minor = (uint16_t)(api_version & 0xFFFFUL);
@@ -141,7 +137,7 @@ int IREECompiler::initIREE(int argc, const char **argv) {
     return 1;
   }
 
-  // Check for a build tag with release version information.
+  // Check for a build tag with release version information
   const char *revision = ireeCompilerGetRevision();
   fprintf(stdout, "Compiler revision: '%s'\n", revision);
   return 0;
@@ -176,11 +172,7 @@ int IREESession::initCompiler() {
 };
 
 int IREESession::initCompileToByteCode() {
-  // ------------------------------------------------------------------------
-  // Compile to bytecode
-  // ------------------------------------------------------------------------
-
-  // Use an invocation to compile from the input source to the output stream.
+  // Use an invocation to compile from the input source to the output stream
   iree_compiler_invocation_t *inv = ireeCompilerInvocationCreate(s.session);
   ireeCompilerInvocationEnableConsoleDiagnostics(inv);
 
@@ -193,7 +185,7 @@ int IREESession::initCompileToByteCode() {
   // Compile, specifying the target dialect phase
   ireeCompilerInvocationSetCompileToPhase(inv, "end");
 
-  // Run the compiler invocation pipeline.
+  // Run the compiler invocation pipeline
   if (!ireeCompilerInvocationPipeline(inv, IREE_COMPILER_PIPELINE_STD)) {
     fprintf(stderr, "Error running compiler invocation\n");
     cleanup_compiler_state(s);
@@ -225,35 +217,14 @@ int IREESession::initCompileToByteCode() {
 };
 
 int IREESession::initRuntime() {
-  // ------------------------------------------------------------------------ //
-  // RUNTIME PART
-  // ------------------------------------------------------------------------ //
-  
-  // Setup the shared runtime instance.
-  // An application should usually only have one of these and share it across
-  // all of the sessions it has. The instance is thread-safe while the
-  // sessions are only thread-compatible (you need to lock around them if
-  // multiple threads will be using them). Asynchronous execution allows for
-  // a single thread (or short-duration lock) to use the session for launching
-  // invocations while allowing for the invocations to overlap in execution.
+  // Setup the shared runtime instance
   iree_runtime_instance_options_t instance_options;
   iree_runtime_instance_options_initialize(&instance_options);
   iree_runtime_instance_options_use_all_available_drivers(&instance_options);
   status = iree_runtime_instance_create(
       &instance_options, iree_allocator_system(), &instance);
 
-  // Create the HAL device used to run the workloads. This should be shared
-  // across multiple sessions unless isolation is required (rare outside of
-  // multi-tenant servers). The device may own limited or expensive resources
-  // (like thread pools) and should be persisted for as long as possible.
-  //
-  // This form of iree_hal_create_device allows the user to pick the device on
-  // the command line out of any available devices with their HAL drivers
-  // compiled into the runtime. iree_runtime_instance_try_create_default_device
-  // and other APIs are available to create the default device and
-  // `iree-run-module --dump_devices` and other tools can be used to show the
-  // available devices. Integrators can also enumerate HAL drivers and devices
-  // if they want to present options to the end user.
+  // Create the HAL device used to run the workloads
   if (iree_status_is_ok(status)) {
     status = iree_hal_create_device(
         iree_runtime_instance_driver_registry(instance),
@@ -261,17 +232,7 @@ int IREESession::initRuntime() {
         iree_runtime_instance_host_allocator(instance), &device);
   }
 
-  // Set up the session to run the demo module.
-  // Sessions are like OS processes and are used to isolate module state such as
-  // the variables used within the module. The same module loaded into two
-  // sessions will see their own private state.
-  //
-  // A real application would load its modules (at startup, on-demand, etc) and
-  // retain them somewhere to be reused. Startup time and likelihood of failure
-  // varies across different HAL backends; the synchronous CPU backend is nearly
-  // instantaneous and will never fail (unless out of memory) while the Vulkan
-  // backend may take significantly longer and fail if there are unsupported
-  // or unavailable devices.
+  // Set up the session to run the demo module
   if (iree_status_is_ok(status)) {
     iree_runtime_session_options_t session_options;
     iree_runtime_session_options_initialize(&session_options);
@@ -280,14 +241,9 @@ int IREESession::initRuntime() {
         iree_runtime_instance_host_allocator(instance), &session);
   }
 
-  // Load the compiled user module from a file.
-  // Applications could specify files, embed the outputs directly in their
-  // binaries, fetch them over the network, etc. Modules are linked in the order
-  // they are added and custom modules usually come before compiled modules.
+  // Load the compiled user module from a file
   if (iree_status_is_ok(status)) {
-    /*status = iree_runtime_session_append_bytecode_module_from_file(session,
-                                                                   module_path);*/
-    
+    /*status = iree_runtime_session_append_bytecode_module_from_file(session, module_path);*/
     status = iree_runtime_session_append_bytecode_module_from_memory(
       session,
       iree_make_const_byte_span(contents, size),
@@ -301,11 +257,34 @@ int IREESession::initRuntime() {
 };
 
 int IREESession::buildAndIssueCall(const char* function_name) {
-  // Build and issue the call - here just one we do for this sample but in a
-  // real application the session should be reused as much as possible. Always
-  // keep state within the compiled module instead of externalizing and passing
-  // it as arguments/results as IREE cannot optimize external state.
-  status = iree_runtime_demo_pybamm(session, function_name);
+  // Build and issue the call
+  
+  std::vector<std::vector<int>> inputs;
+  std::vector<float*> data;
+
+  inputs.push_back({560, 1});
+  for (int i = 0; i < inputs.size(); i++) {
+    data.push_back(new float[inputs[i][0]]);
+  }
+
+  fprintf(stdout, "\n\nRun 1:\n");
+  for(int i = 0; i < inputs[0][0]; i++) {
+    data[0][i] = 0.0f;
+  }
+  status = iree_runtime_exec(session, function_name, inputs, data);
+
+  fprintf(stdout, "\n\nRun 2:\n");
+  for(int i = 0; i < inputs[0][0]; i++) {
+    data[0][i] = static_cast<float>(i/100.0f);
+  }
+  status = iree_runtime_exec(session, function_name, inputs, data);
+
+  fprintf(stdout, "\n\nRun 3:\n");
+  for(int i = 0; i < inputs[0][0]; i++) {
+    data[0][i] = static_cast<float>(100.0f/i);
+  }
+  status = iree_runtime_exec(session, function_name, inputs, data);
+
   if (!iree_status_is_ok(status)) {
     std::cout << "Error: iree_runtime_demo_pybamm failed" << std::endl;
     iree_status_fprint(stderr, status);
@@ -331,176 +310,75 @@ int IREESession::cleanup() {
   return ret;
 }
 
-
-//===----------------------------------------------------------------------===//
-// Call a function within a module with buffer views
-//===----------------------------------------------------------------------===//
-// The inputs and outputs of a call are reusable across calls (and possibly
-// across sessions depending on device compatibility) and can be setup by the
-// application as needed. For example, an application could perform
-// multi-threaded buffer view creation and then issue the call from a single
-// thread when all inputs are ready.
-iree_status_t IREESession::iree_runtime_demo_perform_mul(iree_runtime_session_t* session, const char* function_name) {
+iree_status_t IREESession::iree_runtime_exec(
+  iree_runtime_session_t* session,
+  const char* function_name,
+  const std::vector<std::vector<int>>& inputs,
+  const std::vector<float*>& data
+) {
 
   // Initialize the call to the function.
-  iree_runtime_call_t call;
   IREE_RETURN_IF_ERROR(iree_runtime_call_initialize_by_name(
       session, iree_make_cstring_view(function_name), &call));
 
   // Append the function inputs with the HAL device allocator in use by the
   // session. The buffers will be usable within the session and _may_ be usable
   // in other sessions depending on whether they share a compatible device.
-  iree_hal_device_t* device = iree_runtime_session_device(session);
+  //iree_hal_device_t* device = iree_runtime_session_device(session);
   iree_hal_allocator_t* device_allocator =
       iree_runtime_session_device_allocator(session);
-  iree_allocator_t host_allocator =
-      iree_runtime_session_host_allocator(session);
+  host_allocator = iree_runtime_session_host_allocator(session);
   iree_status_t status = iree_ok_status();
   if (iree_status_is_ok(status)) {
-    // %lhs: tensor<4xf32>
-    iree_hal_buffer_view_t* lhs = NULL;
-    if (iree_status_is_ok(status)) {
-      static const iree_hal_dim_t lhs_shape[1] = {4};
-      static const float lhs_data[4] = {1.0f, 1.1f, 1.2f, 1.3f};
-      status = iree_hal_buffer_view_allocate_buffer_copy(
-          device, device_allocator,
-          // Shape rank and dimensions:
-          IREE_ARRAYSIZE(lhs_shape), lhs_shape,
-          // Element type:
-          IREE_HAL_ELEMENT_TYPE_FLOAT_32,
-          // Encoding type:
-          IREE_HAL_ENCODING_TYPE_DENSE_ROW_MAJOR,
-          (iree_hal_buffer_params_t){
-              // Where to allocate (host or device):
-              .type = IREE_HAL_MEMORY_TYPE_DEVICE_LOCAL,
-              // Access to allow to this memory:
-              .access = IREE_HAL_MEMORY_ACCESS_ALL,
-              // Intended usage of the buffer (transfers, dispatches, etc):
-              .usage = IREE_HAL_BUFFER_USAGE_DEFAULT,
-          },
-          // The actual heap buffer to wrap or clone and its allocator:
-          iree_make_const_byte_span(lhs_data, sizeof(lhs_data)),
-          // Buffer view + storage are returned and owned by the caller:
-          &lhs);
-    }
-    if (iree_status_is_ok(status)) {
-      IREE_IGNORE_ERROR(iree_hal_buffer_view_fprint(
-          stdout, lhs, /*max_element_count=*/4096, host_allocator));
-      // Add to the call inputs list (which retains the buffer view).
-      status = iree_runtime_call_inputs_push_back_buffer_view(&call, lhs);
-    }
-    // Since the call retains the buffer view we can release it here.
-    iree_hal_buffer_view_release(lhs);
 
-    fprintf(stdout, "\n * \n");
+    for(int k=0; k<inputs.size(); k++) {
+      auto input_shape = inputs[k];
+      const auto* input_data = data[k];
 
-    // %rhs: tensor<4xf32>
-    iree_hal_buffer_view_t* rhs = NULL;
-    if (iree_status_is_ok(status)) {
-      static const iree_hal_dim_t rhs_shape[1] = {4};
-      static const float rhs_data[4] = {10.0f, 100.0f, 1000.0f, 10000.0f};
-      status = iree_hal_buffer_view_allocate_buffer_copy(
-          device, device_allocator, IREE_ARRAYSIZE(rhs_shape), rhs_shape,
-          IREE_HAL_ELEMENT_TYPE_FLOAT_32,
-          IREE_HAL_ENCODING_TYPE_DENSE_ROW_MAJOR,
-          (iree_hal_buffer_params_t){
-              .type = IREE_HAL_MEMORY_TYPE_DEVICE_LOCAL,
-              .access = IREE_HAL_MEMORY_ACCESS_ALL,
-              .usage = IREE_HAL_BUFFER_USAGE_DEFAULT,
-          },
-          iree_make_const_byte_span(rhs_data, sizeof(rhs_data)), &rhs);
-    }
-    if (iree_status_is_ok(status)) {
-      IREE_IGNORE_ERROR(iree_hal_buffer_view_fprint(
-          stdout, rhs, /*max_element_count=*/4096, host_allocator));
-      status = iree_runtime_call_inputs_push_back_buffer_view(&call, rhs);
-    }
-    iree_hal_buffer_view_release(rhs);
-  }
-
-  // Synchronously perform the call.
-  if (iree_status_is_ok(status)) {
-    status = iree_runtime_call_invoke(&call, /*flags=*/0);
-  }
-
-  fprintf(stdout, "\n = \n");
-
-  // Dump the function outputs.
-  iree_hal_buffer_view_t* result = NULL;
-  if (iree_status_is_ok(status)) {
-    // Try to get the first call result as a buffer view.
-    status = iree_runtime_call_outputs_pop_front_buffer_view(&call, &result);
-  }
-  if (iree_status_is_ok(status)) {
-    // This prints the buffer view out but an application could read its
-    // contents, pass it to another call, etc.
-    status = iree_hal_buffer_view_fprint(
-        stdout, result, /*max_element_count=*/4096, host_allocator);
-  }
-  iree_hal_buffer_view_release(result);
-
-  iree_runtime_call_deinitialize(&call);
-  return status;
-}
-
-iree_status_t IREESession::iree_runtime_demo_pybamm(iree_runtime_session_t* session, const char* function_name) {
-  // Initialize the call to the function.
-  iree_runtime_call_t call;
-  IREE_RETURN_IF_ERROR(iree_runtime_call_initialize_by_name(
-      session, iree_make_cstring_view(function_name), &call));
-
-  // Append the function inputs with the HAL device allocator in use by the
-  // session. The buffers will be usable within the session and _may_ be usable
-  // in other sessions depending on whether they share a compatible device.
-  iree_hal_device_t* device = iree_runtime_session_device(session);
-  iree_hal_allocator_t* device_allocator =
-      iree_runtime_session_device_allocator(session);
-  iree_allocator_t host_allocator =
-      iree_runtime_session_host_allocator(session);
-  iree_status_t status = iree_ok_status();
-  if (iree_status_is_ok(status)) {
-    // %lhs: tensor<4xf32>
-    iree_hal_buffer_view_t* lhs = NULL;
-    if (iree_status_is_ok(status)) {
-      static const iree_hal_dim_t lhs_shape[2] = {560, 1};
-      static float lhs_data[560];
-      for(int i = 0; i < lhs_shape[0]; i++) {
-        lhs_data[i] = (float)(i/100.0f);
+      iree_hal_buffer_view_t* arg = NULL;
+      if (iree_status_is_ok(status)) {
+        iree_hal_dim_t arg_shape[input_shape.size()];
+        for (int i = 0; i < input_shape.size(); i++) {
+          arg_shape[i] = input_shape[i];
+        }
+        int numel = 0;
+        for(int i = 0; i < input_shape.size(); i++) {
+          numel += input_shape[i];
+        }
+        float arg_data[numel];
+        for(int i = 0; i < numel; i++) {
+          arg_data[i] = input_data[i];
+        status = iree_hal_buffer_view_allocate_buffer_copy(
+            device, device_allocator,
+            // Shape rank and dimensions:
+            IREE_ARRAYSIZE(arg_shape), arg_shape,
+            // Element type:
+            IREE_HAL_ELEMENT_TYPE_FLOAT_32,
+            // Encoding type:
+            IREE_HAL_ENCODING_TYPE_DENSE_ROW_MAJOR,
+            (iree_hal_buffer_params_t){
+                // Where to allocate (host or device):
+                .type = IREE_HAL_MEMORY_TYPE_DEVICE_LOCAL,
+                // Access to allow to this memory:
+                .access = IREE_HAL_MEMORY_ACCESS_ALL,
+                // Intended usage of the buffer (transfers, dispatches, etc):
+                .usage = IREE_HAL_BUFFER_USAGE_DEFAULT,
+            },
+            // The actual heap buffer to wrap or clone and its allocator:
+            iree_make_const_byte_span(arg_data, sizeof(arg_data)),
+            // Buffer view + storage are returned and owned by the caller:
+            &arg);
+        }
       }
-      //static const float lhs_data[4] = {1.0f, 1.1f, 1.2f, 1.3f};
-      status = iree_hal_buffer_view_allocate_buffer_copy(
-          device, device_allocator,
-          // Shape rank and dimensions:
-          IREE_ARRAYSIZE(lhs_shape), lhs_shape,
-          // Element type:
-          IREE_HAL_ELEMENT_TYPE_FLOAT_32,
-          // Encoding type:
-          IREE_HAL_ENCODING_TYPE_DENSE_ROW_MAJOR,
-          (iree_hal_buffer_params_t){
-              // Where to allocate (host or device):
-              .type = IREE_HAL_MEMORY_TYPE_DEVICE_LOCAL,
-              // Access to allow to this memory:
-              .access = IREE_HAL_MEMORY_ACCESS_ALL,
-              // Intended usage of the buffer (transfers, dispatches, etc):
-              .usage = IREE_HAL_BUFFER_USAGE_DEFAULT,
-          },
-          // The actual heap buffer to wrap or clone and its allocator:
-          iree_make_const_byte_span(lhs_data, sizeof(lhs_data)),
-          // Buffer view + storage are returned and owned by the caller:
-          &lhs);
-    } else {
-      std::cout << "hal status: " << status << "\n";
+      if (iree_status_is_ok(status)) {
+        IREE_IGNORE_ERROR(iree_hal_buffer_view_fprint(
+            stdout, arg, /*max_element_count=*/4096, host_allocator));
+        // Add to the call inputs list (which retains the buffer view).
+        status = iree_runtime_call_inputs_push_back_buffer_view(&call, arg);
+      }
+      // Since the call retains the buffer view we can release it here.
+      iree_hal_buffer_view_release(arg);
     }
-    if (iree_status_is_ok(status)) {
-      IREE_IGNORE_ERROR(iree_hal_buffer_view_fprint(
-          stdout, lhs, /*max_element_count=*/4096, host_allocator));
-      // Add to the call inputs list (which retains the buffer view).
-      status = iree_runtime_call_inputs_push_back_buffer_view(&call, lhs);
-    }
-    // Since the call retains the buffer view we can release it here.
-    iree_hal_buffer_view_release(lhs);
-  } else {
-    std::cout << "allocator status: " << status << "\n";
   }
 
   // Synchronously perform the call.
@@ -523,5 +401,6 @@ iree_status_t IREESession::iree_runtime_demo_pybamm(iree_runtime_session_t* sess
   iree_hal_buffer_view_release(result);
 
   iree_runtime_call_deinitialize(&call);
+
   return status;
 }
