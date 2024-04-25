@@ -2,7 +2,6 @@ compile_commands.json
 .cache
 venv
 build
-third_party
 .DS_Store
 
 # Prerequisites

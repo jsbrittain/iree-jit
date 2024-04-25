@@ -27,11 +27,14 @@ installed on your computer, then run:
 ```bash
 git clone git@github.com:jsbrittain/iree-jit.git
 cd iree-jit
-git submodule update --init --recursive
+git submodule update --init --remote --recursive
 
 cmake -B build/ -GNinja . -DCMAKE_EXPORT_COMPILE_COMMANDS=1
 cmake --build build/ --target iree-jit
 ```
+
+Then use `git submodule update --recursive` to update the IREE submodules to the latest
+versions from now on.
 
 _Note_: `DCMAKE_EXPORT_COMPILE_COMMANDS=1` will produce `build/compile_commands.json`
 when the target is built. Copy this to the project root so that it can be used by LSP
