@@ -1,4 +1,5 @@
 #include "iree_jit.hpp"
+#include "iree/hal/buffer_view.h"
 
 #include <inttypes.h>
 #include <stdio.h>
@@ -337,7 +338,7 @@ iree_status_t IREESession::iree_runtime_exec(
 
       iree_hal_buffer_view_t* arg = NULL;
       if (iree_status_is_ok(status)) {
-        iree_hal_dim_t arg_shape[input_shape.size()];
+        std::vector<iree_hal_dim_t> arg_shape(input_shape.size());
         for (int i = 0; i < input_shape.size(); i++) {
           arg_shape[i] = input_shape[i];
         }
@@ -345,13 +346,14 @@ iree_status_t IREESession::iree_runtime_exec(
         for(int i = 0; i < input_shape.size(); i++) {
           numel += input_shape[i];
         }
-        float arg_data[numel];
+        std::vector<float> arg_data(numel);
         for(int i = 0; i < numel; i++) {
           arg_data[i] = input_data[i];
+
         status = iree_hal_buffer_view_allocate_buffer_copy(
             device, device_allocator,
             // Shape rank and dimensions:
-            IREE_ARRAYSIZE(arg_shape), arg_shape,
+            arg_shape.size(), arg_shape.data(),
             // Element type:
             IREE_HAL_ELEMENT_TYPE_FLOAT_32,
             // Encoding type:
@@ -365,7 +367,7 @@ iree_status_t IREESession::iree_runtime_exec(
                 .usage = IREE_HAL_BUFFER_USAGE_DEFAULT,
             },
             // The actual heap buffer to wrap or clone and its allocator:
-            iree_make_const_byte_span(arg_data, sizeof(arg_data)),
+            iree_make_const_byte_span(&arg_data[0], sizeof(float) * arg_data.size()),
             // Buffer view + storage are returned and owned by the caller:
             &arg);
         }

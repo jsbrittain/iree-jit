@@ -38,8 +38,20 @@ int main(int argc, const char **argv) {
   // Run IREE compiler
   IREECompiler iree_compiler("local-sync");  // local-sync | metal
   iree_compiler.init(iree_argc, argv);
-  iree_compiler.addSessions(mlir_files);
-  iree_compiler.testSessions();
+
+  const char* device_uri = "local-sync";
+  IREESession session1(device_uri, mlir_files[0]);
+  session1.buildAndIssueCall("jit_evaluate_jax.main");
+
+  IREESession session2(device_uri, mlir_files[0]);
+  session2.buildAndIssueCall("jit_evaluate_jax.main");
+  
+  IREESession session3(device_uri, mlir_files[0]);
+  session3.buildAndIssueCall("jit_evaluate_jax.main");
+
+  //iree_compiler.addSessions(mlir_files);
+  //iree_compiler.testSessions();
+  
   iree_compiler.cleanup();
   return 0;
 };
