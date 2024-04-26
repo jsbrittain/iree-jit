@@ -61,16 +61,16 @@ private:
   int initCompiler();
   int initCompileToByteCode();
   int initRuntime();
-  // IREE runtime functions
-  iree_status_t iree_runtime_exec(
-    iree_runtime_session_t* session,
-    const char* function_name,
-    const std::vector<std::vector<int>>& inputs,
-    const std::vector<float*>& data
-  );
 public:
   IREESession();
   explicit IREESession(const char *device_uri, const std::string& mlir_code);
   int buildAndIssueCall(const char* function_name);
   int cleanup();
+  // IREE runtime functions
+  iree_status_t iree_runtime_exec(
+    const char* function_name,
+    const std::vector<std::vector<int>>& inputs,
+    const std::vector<std::vector<float>>& data,
+    std::vector<float>& result
+  );
 };

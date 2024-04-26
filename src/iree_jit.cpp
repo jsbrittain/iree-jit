@@ -1,5 +1,6 @@
 #include "iree_jit.hpp"
 #include "iree/hal/buffer_view.h"
+#include "iree/hal/buffer_view_util.h"
 
 #include <inttypes.h>
 #include <stdio.h>
@@ -233,7 +234,7 @@ int IREESession::initRuntime() {
         iree_runtime_instance_host_allocator(instance), &device);
   }
 
-  // Set up the session to run the demo module
+  // Set up the session to run the module
   if (iree_status_is_ok(status)) {
     iree_runtime_session_options_t session_options;
     iree_runtime_session_options_initialize(&session_options);
@@ -259,32 +260,22 @@ int IREESession::initRuntime() {
 
 int IREESession::buildAndIssueCall(const char* function_name) {
   // Build and issue the call
-  
-  std::vector<std::vector<int>> inputs;
-  std::vector<float*> data;
 
-  inputs.push_back({560, 1});
-  for (int i = 0; i < inputs.size(); i++) {
-    data.push_back(new float[inputs[i][0]]);
+  std::vector<std::vector<int>> input_shape = {{10}};
+  std::vector<std::vector<float>> input_data;
+  std::vector<float> result;
+
+  for (const auto& shape : input_shape) {
+    std::vector<float> d;
+    d.resize(shape[0]);
+    for (int i = 0; i < shape[0]; i++) {
+      d[i] = (float) i;
+    }
+    input_data.push_back(d);
   }
 
   fprintf(stdout, "\n\nRun 1:\n");
-  for(int i = 0; i < inputs[0][0]; i++) {
-    data[0][i] = 0.0f;
-  }
-  status = iree_runtime_exec(session, function_name, inputs, data);
-
-  fprintf(stdout, "\n\nRun 2:\n");
-  for(int i = 0; i < inputs[0][0]; i++) {
-    data[0][i] = static_cast<float>(i/100.0f);
-  }
-  status = iree_runtime_exec(session, function_name, inputs, data);
-
-  fprintf(stdout, "\n\nRun 3:\n");
-  for(int i = 0; i < inputs[0][0]; i++) {
-    data[0][i] = static_cast<float>(100.0f/i);
-  }
-  status = iree_runtime_exec(session, function_name, inputs, data);
+  status = iree_runtime_exec(function_name, input_shape, input_data, result);
 
   if (!iree_status_is_ok(status)) {
     std::cout << "Error: iree_runtime_demo_pybamm failed" << std::endl;
@@ -312,10 +303,10 @@ int IREESession::cleanup() {
 }
 
 iree_status_t IREESession::iree_runtime_exec(
-  iree_runtime_session_t* session,
   const char* function_name,
   const std::vector<std::vector<int>>& inputs,
-  const std::vector<float*>& data
+  const std::vector<std::vector<float>>& data,
+  std::vector<float>& result
 ) {
 
   // Initialize the call to the function.
@@ -329,12 +320,12 @@ iree_status_t IREESession::iree_runtime_exec(
   iree_hal_allocator_t* device_allocator =
       iree_runtime_session_device_allocator(session);
   host_allocator = iree_runtime_session_host_allocator(session);
-  iree_status_t status = iree_ok_status();
+  status = iree_ok_status();
   if (iree_status_is_ok(status)) {
 
     for(int k=0; k<inputs.size(); k++) {
       auto input_shape = inputs[k];
-      const auto* input_data = data[k];
+      const auto input_data = data[k];
 
       iree_hal_buffer_view_t* arg = NULL;
       if (iree_status_is_ok(status)) {
@@ -373,8 +364,8 @@ iree_status_t IREESession::iree_runtime_exec(
         }
       }
       if (iree_status_is_ok(status)) {
-        IREE_IGNORE_ERROR(iree_hal_buffer_view_fprint(
-            stdout, arg, /*max_element_count=*/4096, host_allocator));
+        //IREE_IGNORE_ERROR(iree_hal_buffer_view_fprint(
+        //    stdout, arg, /*max_element_count=*/4096, host_allocator));
         // Add to the call inputs list (which retains the buffer view).
         status = iree_runtime_call_inputs_push_back_buffer_view(&call, arg);
       }
@@ -384,23 +375,26 @@ iree_status_t IREESession::iree_runtime_exec(
   }
 
   // Synchronously perform the call.
+  std::cout << "Invoking function: " << function_name << std::endl;
   if (iree_status_is_ok(status)) {
     status = iree_runtime_call_invoke(&call, /*flags=*/0);
   }
+  std::cout << "Function invoked" << std::endl;
 
   // Dump the function outputs.
-  iree_hal_buffer_view_t* result = NULL;
+  iree_hal_buffer_view_t* result_view = NULL;
   if (iree_status_is_ok(status)) {
     // Try to get the first call result as a buffer view.
-    status = iree_runtime_call_outputs_pop_front_buffer_view(&call, &result);
+    status = iree_runtime_call_outputs_pop_front_buffer_view(&call, &result_view);
   }
   if (iree_status_is_ok(status)) {
-    // This prints the buffer view out but an application could read its
-    // contents, pass it to another call, etc.
-    status = iree_hal_buffer_view_fprint(
-        stdout, result, /*max_element_count=*/4096, host_allocator);
+    // Get the buffer view contents as a numeric array
+    iree_host_size_t buffer_length = iree_hal_buffer_view_element_count(result_view);
+    result.resize(buffer_length);
+    status = iree_hal_buffer_map_read(iree_hal_buffer_view_buffer(result_view), 0,
+                             &result[0], sizeof(float) * result.size());
   }
-  iree_hal_buffer_view_release(result);
+  iree_hal_buffer_view_release(result_view);
 
   iree_runtime_call_deinitialize(&call);
 

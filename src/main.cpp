@@ -40,18 +40,38 @@ int main(int argc, const char **argv) {
   iree_compiler.init(iree_argc, argv);
 
   const char* device_uri = "local-sync";
-  IREESession session1(device_uri, mlir_files[0]);
-  session1.buildAndIssueCall("jit_evaluate_jax.main");
-
-  IREESession session2(device_uri, mlir_files[0]);
-  session2.buildAndIssueCall("jit_evaluate_jax.main");
+  IREESession session(device_uri, mlir_files[0]);
   
-  IREESession session3(device_uri, mlir_files[0]);
-  session3.buildAndIssueCall("jit_evaluate_jax.main");
+  std::vector<std::vector<int>> input_shape = {{10}};
+  std::vector<std::vector<float>> input_data;
+  for (const auto& shape : input_shape) {
+    std::vector<float> d;
+    d.resize(shape[0]);
+    for (int i = 0; i < shape[0]; i++) {
+      d[i] = (float) i;
+    }
+    input_data.push_back(d);
+  }
+  std::vector<float> result;
 
-  //iree_compiler.addSessions(mlir_files);
-  //iree_compiler.testSessions();
-  
+  std::cout << "Invoking function with input data [" << input_data.size() << "]: " << std::endl;
+  for (const auto& data : input_data) {
+    std::cout << "  Input data [" << data.size() << "]: ";
+    for (const auto& d : data) {
+      std::cout << d << " ";
+    }
+    std::cout << std::endl;
+  }
+
+  auto status = session.iree_runtime_exec("jit_evaluate_jax.main", input_shape, input_data, result);
+
+  // Print result
+  std::cout << "Result [" << result.size() << "]: ";
+  for (int i = 0; i < result.size(); i++) {
+    std::cout << result[i] << " ";
+  }
+  std::cout << std::endl;
+
   iree_compiler.cleanup();
   return 0;
 };
